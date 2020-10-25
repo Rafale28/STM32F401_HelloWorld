@@ -44,7 +44,6 @@
 /* Private variables ---------------------------------------------------------*/
 I2S_HandleTypeDef hi2s2;
 
-SD_HandleTypeDef hsd;
 
 /* USER CODE BEGIN PV */
 
@@ -53,7 +52,7 @@ SD_HandleTypeDef hsd;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_I2S2_Init(void);
-static void MX_SDIO_SD_Init(void);
+
 
 /* USER CODE BEGIN PFP */
 
@@ -61,13 +60,125 @@ static void MX_SDIO_SD_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+// from http://mazsola.iit.uni-miskolc.hu/~drdani/docs_arm/st/sw/Third_Party/fat_fs_R0.12c/doc/ja/readdir.html
+FRESULT scan_files (
+    char* path        /* 開始ノード (ワークエリアとしても使用) */
+)
+{
+    FRESULT res;
+    DIR dir;
+    UINT i;
+    static FILINFO fno;
 
+
+    res = f_opendir(&dir, path);                       /* ディレクトリを開く */
+    if (res == FR_OK) {
+        for (;;) {
+            res = f_readdir(&dir, &fno);                   /* ディレクトリ項目を1個読み出す */
+            if (res != FR_OK || fno.fname[0] == 0) break;  /* エラーまたは項目無しのときは抜ける */
+            if (fno.fattrib & AM_DIR) {                    /* ディレクトリ */
+                i = strlen(path);
+                sprintf(&path[i], "/%s", fno.fname);
+                res = scan_files(path);                    /* 一つ下へ */
+                if (res != FR_OK) break;
+                path[i] = 0;
+            } else {                                       /* ファイル */
+                //printf("%s/%s\n", path, fno.fname);
+                debug_printf("%s/%s\n", path, fno.fname);
+            }
+        }
+        f_closedir(&dir);
+    }
+
+    return res;
+}
+
+int sdio() {
+  FATFS SDFatFs;  /* File system object for SD disk logical drive */
+  FIL MyFile;     /* File object */
+  char SDPath[4]; /* SD disk logical drive path */
+  static uint8_t buffer[_MAX_SS]; /* a work buffer for the f_mkfs() */
+
+  FRESULT res;                                          /* FatFs function common result code */
+  uint32_t byteswritten, bytesread;                     /* File write/read counts */
+  uint8_t wtext[] = "Hi, this is STM32 working with FatFs Rafale"; /* File write buffer */
+  uint8_t rtext[100];                                   /* File read buffer */
+
+  /*##-1- Link the SD disk I/O driver ########################################*/
+  if(FATFS_LinkDriver(&SD_Driver, SDPath) != 0)
+  {
+      Error_Handler();
+      return -1;
+  }
+  if(f_mount(&SDFatFs, (TCHAR const*)SDPath, 0) != FR_OK)
+  {
+      Error_Handler();
+      return -1;
+  }
+  //FRESULT fr;
+  // debug_printf("mkfs\r\n");
+  // fr = f_mkfs((TCHAR const*)SDPath, FM_ANY, 0, buffer, sizeof(buffer));
+  // if (fr != FR_OK)
+  // {
+  //    Error_Handler();
+  // }
+  scan_files(SDPath);
+  debug_printf("fopen\r\n");
+  if(f_open(&MyFile, "hello.txt", FA_CREATE_ALWAYS | FA_WRITE) != FR_OK)
+  {
+    Error_Handler();
+    return -1;
+  }
+  /*##-5- Write data to the text file ################################*/
+  debug_printf("hello\r\n");
+  res = f_write(&MyFile, wtext, sizeof(wtext), (void *)&byteswritten);
+
+  if((byteswritten == 0) || (res != FR_OK))
+  {
+    /* 'STM32.TXT' file Write or EOF Error */
+    Error_Handler();
+    f_close(&MyFile);
+    return 0;
+  }
+
+  debug_printf("fclose\r\n");
+  f_close(&MyFile);
+
+  debug_printf("fopen\r\n");
+  if(f_open(&MyFile, "hello.txt", FA_READ) != FR_OK)
+  {
+    Error_Handler();
+    return 0;
+  }
+
+  res = f_read(&MyFile, rtext, sizeof(rtext), (UINT*)&bytesread);
+
+  if((bytesread == 0) || (res != FR_OK)) /* EOF or Error */
+  {
+    Error_Handler();
+    f_close(&MyFile);
+    return 0;
+  }
+  debug_printf("%s\r\n", rtext);
+  f_close(&MyFile);
+
+  if ((bytesread != byteswritten))
+  {
+    Error_Handler();
+    return 0;
+  }
+  debug_printf("Success\r\n");
+
+  /*##-11- Unlink the SD disk I/O driver ####################################*/
+  FATFS_UnLinkDriver(SDPath);
+ }
 /* USER CODE END 0 */
 
 /**
   * @brief  The application entry point.
   * @retval int
   */
+
 int main(void)
 {
   /* USER CODE BEGIN 1 */
@@ -92,14 +203,14 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_I2S2_Init();
-  MX_SDIO_SD_Init();
-  MX_FATFS_Init();
+  //MX_FATFS_Init();
   /* USER CODE BEGIN 2 */
+  SDIO_SD_Init();
   GPIO_Init();
   DEBUG_PRINT_Init();
   debug_printf("Hello STM32F401!!\r\n");
+  sdio();
   /* USER CODE END 2 */
-
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   unsigned int count = 0;
@@ -207,35 +318,6 @@ static void MX_I2S2_Init(void)
 
 }
 
-/**
-  * @brief SDIO Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_SDIO_SD_Init(void)
-{
-
-  /* USER CODE BEGIN SDIO_Init 0 */
-
-  /* USER CODE END SDIO_Init 0 */
-
-  /* USER CODE BEGIN SDIO_Init 1 */
-
-  /* USER CODE END SDIO_Init 1 */
-  hsd.Instance = SDIO;
-  hsd.Init.ClockEdge = SDIO_CLOCK_EDGE_RISING;
-  hsd.Init.ClockBypass = SDIO_CLOCK_BYPASS_DISABLE;
-  hsd.Init.ClockPowerSave = SDIO_CLOCK_POWER_SAVE_DISABLE;
-  hsd.Init.BusWide = SDIO_BUS_WIDE_1B;
-  hsd.Init.HardwareFlowControl = SDIO_HARDWARE_FLOW_CONTROL_DISABLE;
-  hsd.Init.ClockDiv = 0;
-  /* USER CODE BEGIN SDIO_Init 2 */
-
-  /* USER CODE END SDIO_Init 2 */
-
-}
-
-
 /* USER CODE BEGIN 4 */
 
 /* USER CODE END 4 */
@@ -248,7 +330,7 @@ void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
-
+  debug_printf("sdio Error \r\n");
   /* USER CODE END Error_Handler_Debug */
 }
 

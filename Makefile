@@ -38,6 +38,7 @@ BUILD_DIR = build
 C_SOURCES =  \
 Core/Src/main.c \
 Core/Src/gpio.c \
+Core/Src/sdio.c \
 Core/Src/debug_print.c \
 Core/Src/stm32f4xx_it.c \
 Core/Src/stm32f4xx_hal_msp.c \
@@ -68,7 +69,8 @@ Core/Src/system_stm32f4xx.c \
 Middlewares/Third_Party/FatFs/src/diskio.c \
 Middlewares/Third_Party/FatFs/src/ff.c \
 Middlewares/Third_Party/FatFs/src/ff_gen_drv.c \
-Middlewares/Third_Party/FatFs/src/option/syscall.c  
+Middlewares/Third_Party/FatFs/src/option/ccsbcs.c \
+Middlewares/Third_Party/FatFs/src/option/syscall.c 
 
 # ASM sources
 ASM_SOURCES =  \
